@@ -1,0 +1,860 @@
+---
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+# Lahmann's Analysis (Only Going to Concentrate on Certain Time Frame)
+
+I have chosen to do an analysis about the history of baseball because I would want to have a broader understanding of the sport and to have more diverse topics. For this project, we are going to perform analysis in different divisions to determine if there are correlations with attendance, performance, salary, and size. 
+
+### Loading the Libraries
+```{r, message = FALSE}
+library(knitr)
+library(MASS)
+library(tibble)
+library(markdown)
+library(ggplot2) # Data visualization
+library(readr) # CSV file I/O, e.g. the read_csv function
+library(dplyr)
+library(lubridate)
+library(broom)
+library(dotwhisker)
+library(cem)
+library(car)
+library(plyr)
+library(tidyr)
+library(scales)
+library(plotly)
+library(DT)
+
+```
+
+
+## Reading the Datasets Based on Attendance, Pitching, Player Information, Salary, and Batting 
+```{r}
+attendance <- read.csv("./teams.csv",na.strings=c("","NA"))
+pitching <- read.csv("./pitching.csv")
+player_info <- read.csv("./player.csv")
+player_salary <- read.csv("./salaries.csv")
+batters <- read.csv("./batting.csv", stringsAsFactors = FALSE)
+fielding <- read_csv("./fielding.csv",col_types = cols())
+```
+
+## Looking through the First Set of Rows on Each Dataset
+
+```{r}
+head(attendance, 5)
+head(pitching, 5)
+head(player_info, 5)
+head(player_salary, 5)
+head(batters, 5)
+head(fielding, 5)
+```
+
+## Looking at the Structure of the Dataset
+
+```{r}
+str(attendance)
+str(pitching)
+str(player_info)
+str(player_salary)
+str(batters)
+str(fielding)
+```
+
+```{r, include = FALSE}
+any(is.na(attendance))
+any(is.na(pitching))
+any(is.na(player_info))
+any(is.na(player_salary))
+any(is.na(batters))
+any(is.na(fielding))
+```
+
+# Cleaning the Data, More Cleaning Along the Way
+
+## Fixing the Attendance Data
+```{r}
+attendance <- subset(attendance, attendance != 'NA')
+attendance <- subset(attendance, yearID > 1969)
+```
+
+
+## Fixing the Pitching Data
+```{r}
+pitching <- subset(pitching, pitching  !='NA')
+pitching[ , colSums(is.na(pitching)) == 0]
+```
+## Fixing the Batters Data
+```{r}
+batters <- subset(batters, batters !='NA')
+batters$SF <- as.integer(batters$SF)
+```
+## Fixing the Player Info Data
+```{r}
+player_info <- subset(player_info, player_info != 'NA')
+```
+
+
+## Fixing the Fielding Data
+```{r}
+fieldING <- subset(fielding, fielding != 'NA')
+fielding = subset(fielding, yearID > 1920)
+fieldING <- subset(fielding, E != 'NA')
+names(player_salary) <- c("yearID","teamID","lgID","playerID","salary")
+```
+
+## Add Salary to Batting and Pitching Information
+
+```{r}
+batters <- dplyr::inner_join(batters,player_salary,by=c("playerID","teamID","lgID","yearID"))
+pitching <- dplyr::inner_join(pitching,player_salary,by=c("playerID","teamID","lgID","yearID"))
+```
+
+## Get Rid of the Batters in the Pitching Data
+
+```{r}
+batters <- dplyr::anti_join(batters,pitching,by="playerID")
+```
+
+
+
+## Visualizing the Attendance for Baseball
+```{r}
+ggplot(attendance, aes(yearID, attendance)) + geom_bar(stat="identity", aes(fill=G>157))+
+  guides(fill=FALSE)+
+  ggtitle("Total Home Attendance on an Annual Basis (Lockouts in 72, 81, 94, and 95)")+
+  scale_y_continuous(labels = comma) +
+  theme_minimal()
+```
+
+
+
+## Product on the Field
+```{r, message = FALSE}
+product <- ggplot(attendance, aes(W, log10(attendance))) + geom_point(color="darkblue") + 
+  labs(x="Wins", y="Attendance") +
+  scale_y_continuous(labels = comma) +
+  ggtitle("Wins Based on Attendance") +
+  geom_smooth(method = "lm", col = "brown")
+
+ggplotly(product)
+```
+
+```{r, message = FALSE}
+hrattn <- ggplot(attendance, aes(HR, attendance)) + geom_point(color="brown") + 
+  labs(x="Home Runs", y="Attendance") + 
+  scale_y_continuous(labels = comma) +
+  ggtitle("Home Runs Based on Attendance")+
+  geom_smooth(method = "lm", col = "orange")
+
+ggplotly(hrattn)
+```
+
+Despite winning 67 games in the 1993 season for Colorado Rockies, it has attracted about 4.5 million attendance. However, it was the first season into the franchise, so there has to be a fanbase for the team in order to attract many people to come. In comparison to the other end,  there are some bad teams who's seasons and attendance were low during the lockout seasons. The 1981 Chicago Cubs were stopped at 38-65 record with an attendance of 565,637 before the season was cut short. Many outliers on this graph. With the regression line, it has been determined that there are more data points being above the threshold. 
+
+
+
+
+## Comparing them to the Losses on the Field
+```{r, message = FALSE}
+lossatn <- ggplot(attendance, aes(L, attendance)) + geom_point(color="magenta") + labs(x="Losses", y="Attendance") +
+  scale_y_continuous(labels = comma) +
+  ggtitle("Losses Based on Attendance")+
+  geom_smooth(method = "lm", col = "green") +
+  theme_minimal()
+ggplotly(lossatn)
+
+```
+
+
+It seems that around 95 losses, there must be a lot of attendance, which is interesting. It does trace back to the 1993 season with Colorado Rockies. It is possible that it could be one of the well-known franchise teams that must have a bad season that is marred by many factors such as injuries, personal, or team conflict. Although, it is hard to predict. Lot more points above the threshold with the errors to attendance ratio. It has been determined that it is not a good model since r-squared is heading to the negative distribution.
+
+
+## Comparing them to the Errors
+```{r, message = FALSE}
+errors <- ggplot(attendance, aes(E, log10(attendance))) + geom_point(color="darkred") +   labs(x="Errors", y="Attendance") +
+  scale_y_continuous(labels = comma) +
+  ggtitle("Attendance Based on Errors")+
+  geom_smooth(method = "lm", col = "mistyrose")
+
+ggplotly(errors)
+```
+
+## Joining the Moneyball Data
+```{r}
+salary <- select(player_salary, yearID, teamID, salary)
+salary <- group_by(salary, yearID, teamID) %>% summarise(dollars = sum(salary))
+team_salary <- left_join(attendance, salary)
+team_salary <- subset(team_salary, yearID > 1984) #salary data starts at 1984
+```
+
+
+If any of us are believing that the money is paid for all the high-performing athletes, it isn't necessarily the case. It is not drawn based on attendance either. There are many factors that determine the high pay for attracting the best talent. It could be based on their performance on defense as well. There are many examples to determine it.
+
+
+## Team Salary vs. Attendance
+```{r}
+ggplot(team_salary, aes(dollars, attendance)) + geom_point(color="darkgreen",size=4, shape=36) + 
+  labs(x="Team Salary", y="Attendance") +
+  scale_y_continuous(labels = comma) +
+  scale_x_continuous(labels = comma) +
+  ggtitle("Team Salary & Attendance")+
+  geom_smooth(method = "lm", col = "blue")
+```
+
+In this visual, it has been seen that for the maximum attendance that is around 4.5 million people, there has been a lower team salary, probably because the franchise team had a bad season occurring in factors such as the team management or injuries. For the maximum team salary, it turns out that there is at least an attendance of over 3 million people. 
+
+
+# Creating the Moneyball Information (From 1969)
+
+## creating a New Variable for Run Difference 
+```{r}
+attendance$RD <- attendance$R - attendance$RA
+```
+
+## Relationship between wins and run difference for Oakland A's
+
+```{r}
+ggplot(data = attendance) + geom_smooth(mapping = aes(x = W, y = RD), color="darkblue") + 
+  ggtitle('Relationship Between Wins and Run Difference') + labs(x="Wins", y="Runs Difference")
+```
+
+## Creating a Linear Regression Model for Run Difference Oakland A's
+
+```{r}
+wins_reg <- lm(W ~ RD, data = attendance)
+summary(wins_reg)
+```
+
+## Histogram and qqplots for wins_reg
+```{r}
+hist(rnorm(wins_reg$residuals), col = "red", main = "Wins for Run Difference", xlab = "Residuals")
+```
+
+## QQ Plots for Wins_Reg
+```{r}
+qqnorm(wins_reg$residuals)
+qqline(wins_reg$residuals, col = "green")
+```
+
+## Sample Mean Calculations for Wins Reg with Rnorm
+```{r}
+winsregrx <- rnorm(wins_reg$residuals)
+fitdistr(winsregrx, "normal")
+wrfit <- fitdistr(winsregrx, "normal")
+wrfit$estimate
+```
+
+
+## Sample Mean for Wins Reg 
+
+```{r}
+sum(wins_reg$residuals)/length(wins_reg$residuals)
+```
+
+## Shapiro-Wilk Test for Wins Reg
+
+```{r}
+wrnd <- rnorm(wins_reg$residuals)
+shapiro.test(wrnd)
+```
+
+Based on the information between the Wins and Runs Difference, this is the equation that is came up for the linear regression mode:
+
+"w = 78.957265 + 0.102115(RD)  \nw = 78.957265 + 0.102115(135)  \nw ~ 93  \n\n
+
+### Using 135 as a Predictor for Oakland A's
+
+It was predicted at 93 runs given in 2002 for the team concentrated on the Oakland A's performance. It is still one of the predictors in the baseball statistics. In addition with the qqplots and histograms, it turns out that there is a strong correlation to its sample as well on top of predictions. With the p-value predicted that is > 0.05, we can fail to reject the null hypothesis. Sample mean is not equal to zero. The Shapiro-Wilk test shows that we could reject the null hypothesis as to the t-test.
+
+
+## Linear Regression Model for Scored Runs for Oakland A's
+
+```{r}
+runs_scored <- lm(R ~ AB + H + X2B + X3B + HR + BB + SB + CS, data = attendance)
+summary(runs_scored)
+```
+
+
+## Creating a Logistic Regression Model for Scored Runs for Comparisions
+```{r}
+runs_scored <- lm(R ~ AB + H + X2B + X3B + HR + BB + SB + CS, data = attendance, family = "binomial")
+summary(runs_scored)
+```
+
+## Histogram for Runs Scored Residuals
+
+```{r}
+hist(rnorm(runs_scored$residuals), col = "blue", main = "Runs Scored Residuals", xlab = "Residuals")
+```
+
+## QQ Plots for Runs Scored Residuals
+
+```{r}
+qqnorm(runs_scored$residuals)
+qqline(runs_scored$residuals, col = "salmon")
+```
+
+
+## Sample Mean Calculations for Scored Residuals for Rnorm
+
+```{r}
+runsscoredrx <- rnorm(runs_scored$residuals)
+fitdistr(runsscoredrx, "normal")
+rsfit <- fitdistr(runsscoredrx, "normal")
+rsfit$estimate
+```
+
+## Sample Mean for Runs Scored
+
+```{r}
+sum(runs_scored$residuals)/length(runs_scored$residuals)
+```
+
+## Shapiro-Wilk Test for Scored Residuals
+
+```{r}
+srnd <- rnorm(runs_scored$residuals)
+shapiro.test(srnd)
+```
+## T-Test for Scored Residuals
+
+```{r}
+srtest <- t.test(srnd)
+srtest$p.value
+```
+
+By comparing the differences utilizing both the linear and logistic regression models, the results turn out to be the same. R-squared equated to 0.9483, which is a really good model. It turns out that the equation from the model equates to:
+
+\nr = 5.177834 + (-0.105735 * AB) + (0.621239 * H) + (0.207906 * X2B) + (0.544204 * X3B) + (0.944925* HR) + (0.341597 * BB) + (0.262176 * SB) + (-0.274041 * CS)  \n\n
+
+## Prediciton Example for the Equation for Oakland A's
+
+\nr = 5.177834 + (-0.105735 * 5558) + (0.621239 * 1450) + (0.207906 * 279) + (0.544204 * 28) + (0.944925* 205) + (0.341597 * 609) + (0.262176 * 46) + (-0.274041 * 20)  \nr = 799.8642
+
+r ~ 800
+
+It turns out that it is coming close to 800 for Oakland A's in 2002.
+
+Also, by running the statistical tests, it has been proven that we can fail to reject the null hypothesis again as p is > 0.05. Sample mean is not equated to zero for the scored residuals. The Shapiro-Wilk test shows that we could also fail the reject the null hypothesis again as to the t-test.
+
+## Runs Allowed Regression
+```{r}
+runs_allowed <- lm(R ~ SV + IPouts + H + ER + HR + BB + SO + WP + HBP + BK, data = pitching)
+summary(runs_allowed)
+```
+
+## Histogram for Runs Allowed
+
+```{r}
+hist(rnorm(runs_allowed$residuals), col = "yellow", main = "Runs Allowed Residuals", xlab = "Residuals")
+```
+
+## QQ Plots for Runs Allowed
+
+```{r}
+qqnorm(runs_allowed$residuals, col = "green")
+qqline(runs_allowed$residuals, col = "darkred")
+```
+
+
+## Sample Mean Calculations for Wins Reg
+
+```{r}
+raregrx <- rnorm(runs_allowed$residuals)
+fitdistr(raregrx, "normal")
+rafit <- fitdistr(raregrx, "normal")
+rafit$estimate
+```
+
+## Sample Mean for Runs Allowed
+
+```{r}
+sum(runs_allowed$residuals)/length(runs_allowed$residuals)
+```
+
+
+## T-Test for Wins Reg
+
+```{r}
+testwr <- t.test(runs_allowed$residuals)
+testwr$p.value
+```
+
+
+By having this equation:
+
+\nr = 0.036056 + (-0.014268 * SV) + (-0.011360 * IPouts) + (0.102181 * H) + (0.896016 * ER) + (0.026607 * HR) + (0.062142 * BB) + (-0.007035 * SO) + (0.075391 * WP) + (0.078287 * HBP) + (0.149150 * BK)   \n\n
+
+\nr = 0.036056 + (-0.014268 * 48) + (-0.011360 * 4356) + (0.102181 * 1450) + (0.896016 * 593) + (0.026607 * 205) + (0.062142 * 609) + (-0.007035 * 1008) + (0.075391 * 2.353) + (0.078287 * 68) + (0.149150 * 0.5294)  
+
+\nr ~ 671  \n\
+
+
+By projecting that Oakland A's would allow 671 runs, however, it has totaled out to 654, which is still accurate for the 2002 season. 
+
+Many teams in the Major League baseball concentrated on Batting Average (BA) too much.Oakland A's discovered that On-Base Percentage (OBP) and Slugging Percentage are the top category for the most important statistical measure. However, we are going to see if that holds true.
+
+Based on the analysis for the p-value and using the t-test, it has proven that we could fail to reject the null hypothesis for the runs allowed variable. Sample mean is not zero at all. 
+
+## Performance During the Seasons Between 2002-2016
+
+```{r, message = FALSE}
+get_wins <- attendance
+get_wins$win_ratio <- get_wins$W/get_wins$G
+oakland <- subset(get_wins, teamID == 'OAK' & yearID >= 2002)
+athletics <- ggplot(data = oakland) + 
+  geom_line(mapping = aes(x = yearID, y = win_ratio), color="darkseagreen") + 
+  ggtitle("Oakland A's Performance During 2002-2016") + 
+  labs(x="year", y="win-ratio") + 
+  scale_x_continuous(breaks = round(seq(min(oakland$year), max(oakland$year), by = 1),1))
+ggplotly(athletics)
+```
+
+In this part, the model runs at r-squared that is 0.99, which it is almost perfect when there are more than two variables that are described in analyzing the wins, runs, and scores. By comparison with the first two regression models, the runs scored is also works and will be used for analysis, which is at 0.94. However, looking at the first model, the fit is only OK given that r-squared is at 0.71, and it does not always have valid information to make decisions by looking at two variables focusing only on wins attribute. Proven that focusing at least on 3 or more variables would give a better description on making the analyses on the model.  
+
+
+## Batting Averages
+```{r}
+test<- subset(attendance, yearID >= 1985 & yearID < 2002)
+test$obp <- (test$H + test$HBP + test$BB)/(test$AB + test$BB + test$HBP + test$SF)
+test$slg <- ((test$BB) + (2 * test$X2B) + (3 * test$X3B) + (4 * test$HR))/(test$AB)
+test$ba <- (test$H)/(test$AB)
+```
+
+## Comparision of OBP, SLG and BA
+
+```{r}
+ggplot(test, aes(W)) + 
+  geom_smooth(aes(y = obp,  color="obp")) + 
+  geom_smooth(aes(y = slg,  color="slg")) + 
+  geom_smooth(aes(y = ba,  color="ba")) + labs(x="Wins", y="%") + 
+  ggtitle("Comparison of OBP, SLG and BA")
+```
+
+From the information that is gathered in the above plot, it is deemed that the On-Base Percentage (OBP) and Slugging Percentage (SLG) statistics are more important based on the earlier prediction on the analysis.
+
+# Salaries Overtime from 1985-2016
+```{r}
+p <- ggplot(player_salary, aes(x=factor(yearID), y=log(salary), fill = lgID)) +
+  geom_boxplot() +
+  xlab("Year") +
+  ylab("Annual Salary in Millions") +
+  ggtitle("Breakdown with the League Differences in Salaries from 1985") +
+  scale_x_discrete(breaks=unique(player_salary$yearID)[c(TRUE, FALSE)]) +
+  scale_y_continuous(label=dollar) +
+  theme_light(base_size=10)
+print(p)
+```
+
+
+## Salaries Overtime from 1985-2016 Without the League
+```{r, message = FALSE, echo = FALSE}
+nofill_p <- ggplot(player_salary, aes(x=factor(yearID), y=salary)) +
+  geom_boxplot() +
+  xlab("Year") +
+  ylab("Annual Salary") +
+  scale_x_discrete(breaks=unique(player_salary$yearID)[c(TRUE, FALSE)]) +
+  scale_y_continuous(label=dollar) +
+  theme_light(base_size=10)
+ggplotly(nofill_p)
+```
+
+For the salaries comparison between the leagues, it has turned out that there has been equal distributions overtime adjusted for inflation. However, it turns out that American League has been getting the higher pay for the last ten years except in 2014.
+
+
+## Batters Overtime from 1985-2016
+```{r}
+homeruns_by_year <- batters %>% 
+  group_by(yearID) %>% 
+  summarise(HR = sum(HR))
+```
+
+```{r, message = FALSE}
+p1 <- ggplot(homeruns_by_year, aes(x=yearID, y=HR)) +
+  geom_point() +
+  xlab("Year") +
+  ylab("Home Runs") +
+  scale_x_discrete(breaks=unique(homeruns_by_year$yearID)[c(TRUE, FALSE)]) +
+  scale_y_continuous() +
+  theme_light(base_size=10) + 
+  ggtitle("Batters Overtime")
+ggplotly(p1)
+```
+
+
+## Looking Up the One Hit Wonders 
+
+## Consider Only Stats After 1950
+
+```{r}
+hr_since50 <- batters %>% filter(yearID>=1950) %>% select(playerID,yearID,stint,HR);
+```
+
+
+## If a player has multiple "stints" in one season, calculate the total HR for the season.
+
+```{r}
+hr_season_since50 <- hr_since50 %>% group_by(playerID, yearID) %>% summarise(seasonHR=sum(HR));
+```
+
+## Calculate career total HR, career season count for players. Remove players who appeared for lesser than 5 seasons.
+
+```{r}
+hr_season_since50 <- hr_season_since50 %>% group_by(playerID) %>% mutate(careerHR=sum(seasonHR),career_year=n()) %>% filter(career_year>=5);
+```
+
+## Calculate career average HR per season for each player. Calculate the ratio of single year HR to career average.
+
+```{r}
+yearly_hr_vs_career_avg <- hr_season_since50 %>% mutate(career_per_season=careerHR/career_year, year_vs_avg=seasonHR/career_per_season);
+```
+
+
+## Joining Player Data for Birth and Year
+
+```{r}
+hr_fluke_ratio_and_age <- inner_join(yearly_hr_vs_career_avg, player_info, by="playerID") %>% 
+  mutate(age=yearID-birthYear)%>% 
+  select(playerID, nameFirst, nameLast, yearID, age, seasonHR, careerHR, career_year, career_per_season, year_vs_avg) %>% 
+  ungroup();
+```
+
+## Keep the rows for which the player hit more than 2x HRs than career average, and HR>=10 on that year.
+
+```{r}
+out<-filter(hr_fluke_ratio_and_age, seasonHR>=10, year_vs_avg>=2) %>% arrange(desc(year_vs_avg));
+```
+
+
+## Most Deviation Form on a Data Table
+
+```{r}
+datatable(out, class='compact');
+```
+
+## Most Home Runs in One Season for a Data Table
+
+```{r}
+out2 <- out %>% arrange(desc(seasonHR));
+datatable(out2, class='compact');
+```
+
+## Visualization of the One-Hit Wonders
+
+```{r, message = FALSE}
+onehit <- ggplot(out, aes(age,year_vs_avg)) + 
+  geom_point(color = "blue", alpha = 0.4) + 
+  labs(x="Player Age", y="Season HR per Career Average") + 
+  ggtitle("Players With One Season HR More Than 2x Career Average") + 
+  theme_minimal();
+ggplotly(onehit)
+
+```
+
+
+Based on the visualization, it turns out that the late 20s to the mid 30s are the players that have had a great season for the one-hit wonders. The data is compared from the Home Run per season vs. the career. Outliers happen more after the late to mid 30s. 
+
+## Taking a Look at the Closers
+
+```{r}
+options(dplyr.width = Inf)
+```
+
+## Looking at Data After 1985
+```{r}
+pitching <- pitching  %>% filter(yearID>=1985) %>% 
+  select(playerID,yearID,stint,W,L,G,GS,GF,SV,IPouts,H,BB,ER,SO,R)
+```
+
+## Calculating the Totals For the Season Based On Stints
+```{r}
+pitching <- pitching  %>% 
+  group_by(playerID, yearID) %>% 
+  summarise(W=sum(W), L=sum(L), G=sum(G), GS=sum(GS),GF=sum(GF),SV=sum(SV),IPouts=sum(IPouts),H=sum(H),BB=sum(BB),ER =sum(ER),SO=sum(SO),R=sum(R)) %>% 
+  ungroup();
+```
+
+## Players Not Started this Year
+```{r}
+rp_pitching <- pitching %>% filter(GS==0);
+```
+
+## Getting player Names and Information
+```{r}
+player_info <- player_info %>% 
+  separate(debut, c("debut"), sep="-") %>% 
+  select(playerID, birthYear, nameFirst, nameLast, debut)
+```
+
+```{r}
+rp_pitching <- inner_join(rp_pitching, player_info, by="playerID")%>% 
+  mutate(id_year=paste(playerID, yearID, sep="_"))
+```
+
+```{r}
+player_salary <- player_salary %>% 
+  mutate(id_year = paste(playerID, yearID, sep="_")) %>% 
+  select(id_year,salary)
+```
+
+```{r}
+rp_pitching <- inner_join(rp_pitching, player_salary, by="id_year");
+```
+
+## Percentage of Finishing Off
+```{r}
+rp_pitching<-rp_pitching %>% 
+  mutate(gf_ratio=GF/162, gf_percent=GF/G)
+```
+
+## Calculating the Mean Salary Annually and Analyzing the WHIP (Walk + Hit Per Inning Pitched)
+```{r}
+rp_pitching<-rp_pitching %>% 
+  group_by(yearID) %>% 
+  mutate(season_avg_salary=mean(salary)) %>% 
+  ungroup() %>% 
+  mutate(salary_ratio=salary/season_avg_salary, season=yearID-as.numeric(debut), whip=(H+BB)/IPouts*3, era=ER/IPouts*27);
+```
+
+## Replacing the Datapoints with NA
+```{r}
+rp_pitching<-do.call(data.frame,lapply(rp_pitching, function(x) replace(x, is.infinite(x),NA)))
+```
+
+
+## Looking at Salaries Per Peformance
+```{r}
+cor(rp_pitching$salary_ratio, rp_pitching$whip,use="pairwise.complete")
+cor(rp_pitching$salary_ratio, rp_pitching$era,use="pairwise.complete")
+```
+
+## Who are the Closers?
+```{r}
+closers<- rp_pitching %>% filter(SV > 15);
+nonclosers<- rp_pitching %>% filter(SV <= 15);
+fa_closers <- closers %>% filter(season>=7&IPouts>=150);
+fa_nonclosers <- nonclosers %>% filter(season>=7&IPouts>=150);
+nrow(fa_closers)
+```
+
+## Non-Closers
+```{r}
+nrow(fa_nonclosers)
+```
+
+Based on this threshold, we have 315 FA closer seasons vs. 715 FA Non-Closer seasons. It has been determined that there needs to be more analysis by changing the limits on more than one save per season. 
+
+
+## Boxplots of Closers vs. Non-Closers
+```{r}
+boxplot(fa_closers$gf_percent*100, fa_nonclosers$gf_percent*100,  
+        names=c("Closers", "Non-Closers"), 
+        ylab="% of Finishing a Game (Being Last Pitcher In Game)",
+        main = "Closers vs. Non-Closers",
+        col = "lightcoral")
+```
+
+```{r}
+summary(fa_closers$gf_percent)
+```
+
+```{r}
+summary(fa_nonclosers$gf_percent)
+```
+
+By looking at the boxplots, closers finished the game 83% of the time, while the non-closers only finish in the 31% of the time. The information is based on the difference with 15 or more saves per season. 
+
+
+## Last Pitcher in Game to Finish Up
+```{r}
+plot(density(fa_closers$gf_percent*100), xlim=c(0,100), col="blue", xlab="% of Finishing a Game (Being Last Pitcher in Game)", main="")
+lines(density(fa_nonclosers$gf_percent*100), col="darkred")
+legend(0,0.06,c("Non-Closers", "Closers"),c("darkred", "blue"))
+```
+
+
+## Closers vs. Non-Closers Performance
+```{r}
+summary(fa_closers$whip)
+summary(fa_nonclosers$whip)
+summary(fa_closers$salary_ratio)
+summary(fa_nonclosers$salary_ratio)
+```
+
+## WHIP Difference
+```{r}
+boxplot(fa_closers$whip, fa_nonclosers$whip, 
+        names=c("Closers", "Non-Closers"), ylab="WHIP (Hit+Walk per Inning)",
+        main = "Difference of WHIP",
+        col = "darkolivegreen")
+```
+
+
+In this analysis on the WHIP difference, it turns out that the non-closers have made more of an impact than the closers. Although, when it comes to the salary ratio, the closers get paid more, particularly the relief pitchers by difference of per inning. 
+
+
+
+```{r}
+boxplot(fa_closers$salary_ratio, fa_nonclosers$salary_ratio, 
+        names=c("Closers", "Non-Closers"), ylab="Salary / Avg. Relief Pitcher Salary",
+        main = "Salary Ratio on WHIP Differences",
+        col = "goldenrod")
+```
+
+## Scatterplot Differences
+```{r}
+plot(fa_closers$salary_ratio,fa_closers$whip, 
+     xlab="Salary / Avg. Relief Pitcher Salary", ylab="WHIP (Hit+Walk per Inning)", 
+     main = "Difference Between the Salary Ratio on Relief Pitchers",
+     xlim=c(0,10), ylim=c(0.6,2.0), col = "green", pch = 19)
+points(fa_nonclosers$salary_ratio, fa_nonclosers$whip, col=2, pch = 19)
+legend(7,2.0,c("Closers", "Non-Losers"),c("green", "red"))
+```
+
+```{r}
+low_whip_closers<-fa_closers %>% filter(whip<=1.20)
+low_whip_nonclosers<-fa_nonclosers %>% filter(whip<=1.20)
+nrow(low_whip_closers)
+nrow(low_whip_nonclosers)
+```
+
+
+By looking at the scatterplot of the relief pitcher salary, it has been determined that the closers have a migh higher pay based on the green dots that are in the right side of the distribution of the analysis. There are more red dots on the left, and at most get up to the middle of the distribution. The one outlier for the non-closer must have to be the best player in the league in order to achieve that status to receive the highest pay in the league. 
+
+
+
+
+## Low- WHIP Nonclosers
+```{r}
+boxplot(low_whip_closers$whip, low_whip_nonclosers$whip, 
+        names=c("Closers", "Non-Closers"), ylab="WHIP (Hit+Walk per Inning)",
+        main = "Low WHIP Non-Closers",
+        col = "skyblue")
+```
+
+## Difference with Relief-Pitchers
+```{r}
+boxplot(low_whip_closers$salary_ratio, low_whip_nonclosers$salary_ratio, 
+        names=c("Closers", "Non-Closers"), ylab="Salary / Avg. Relief Pitcher Salary",
+        main = "Difference with Relief Pitchers",
+        col = "maroon")
+```
+
+```{r}
+plot(low_whip_closers$salary_ratio,low_whip_closers$whip, 
+     xlab= "Salary / Avg. Relief Pitcher Salary", ylab="WHIP (Hit+Walk per Inning)",
+     main = "Difference of Salaries",
+     xlim=c(0,10), ylim=c(0.6,1.3), col = "blue", pch = 16)
+points(low_whip_nonclosers$salary_ratio, low_whip_nonclosers$whip, col=2, pch = 16)
+legend(7,1.3,c("Closers", "Non-Losers"),c("blue", "red"))
+```
+
+Again, by looking at the plots again, it has been determined that the closing relief pitchers have been making more closing moments in the game headed towards the right in the distribution points that are shaded in blue. Same comparison as with the previous visuals with the walks per hit and inning ratio. 
+
+## Low-ERA Closers
+
+```{r}
+low_era_closers<-fa_closers %>% filter(era<=3.0)
+low_era_nonclosers<-fa_nonclosers %>% filter(era<=3.0)
+nrow(low_era_closers)
+
+nrow(low_era_nonclosers)
+```
+
+## Comparisons with ERA on Closers vs. Non-Closers
+```{r}
+boxplot(low_era_closers$era, low_era_nonclosers$era, 
+        names=c("Closers", "Non-Closers"), ylab="ERA (ER per 9 Innings)",
+        main = "Comparisons with ERA on Closers vs. Non-Closers",
+        col = "red")
+```
+
+By looking at the boxplots again for closers and non-closers, it has seemed that the closers have made more salary when the game goes down the wire by playing all 9 innings and closing down the game. Again, this is the impact with the relief pitchers. 
+
+
+
+```{r}
+boxplot(low_era_closers$salary_ratio, low_era_nonclosers$salary_ratio, 
+        names=c("Closers", "Non-Closers"), ylab="Salary / Avg. Relief Pitcher Salary",
+        main = "Salary Ratio Between the Closers vs. Non-Closers",
+        col = "khaki")
+```
+
+
+```{r}
+plot(low_era_closers$salary_ratio,low_era_closers$era, 
+     xlab="Salary / Avg. Relief Pitcher Salary", ylab="ERA (ER per 9 Innings)", 
+     main = "Salaries for ERA Comparisons",
+     xlim=c(0,10), ylim=c(0.6,3.0), col = "gold", pch = 16)
+points(low_era_nonclosers$salary_ratio, low_era_nonclosers$era, pch = 16, col = "green")
+legend(7,1.0,c("Closers", "Non-Losers"),c("gold", "green"))
+```
+
+
+For the concluding analyses on the closers, it turns out that the closers make more money than the non-closers based on the given performance on having more saves to end the game. However, it is important to secure leads during late in the game to earn victories, and not playing extra innings. 
+
+
+# Errors History
+
+## Sum the errors By yearID
+```{r}
+errors_by_year = tapply(fieldING$E, fieldING$yearID, sum)
+```
+## Make the Year as a Factor
+```{r}
+years = factor(fieldING$yearID)
+years = levels(years)
+```
+
+## New Dataset with Total number of Errors by Year
+```{r}
+ebyt2 = cbind(errors_by_year, years)
+ebyt2 = data.frame(ebyt2)
+```
+## Plotting the Errors by Year
+```{r}
+ggplot(ebyt2, aes(years, errors_by_year)) + 
+  geom_bar(stat = 'identity', col = "darkred", fill = "skyblue") + 
+  labs(title="Errors By Year Since 1920", x = "Years", y = "Errors By Year") + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  scale_y_discrete(breaks = pretty(errors_by_year, n=10))
+```
+
+The data is all chronological for the errors that are done based on the r console. However, the focus is going to look at 1920 to present, since the analyses before is not as much of a factor for errors. 
+
+
+
+## Looking & Plotting Errors by Position
+
+```{r}
+atopper = ddply(fieldING, "POS", summarise, errors_by_position = sum(E))
+
+ggplot(atopper, aes(POS, errors_by_position)) + 
+  geom_bar(stat='identity', fill = "red") + 
+  labs(title="Errors by Position Since 1920", x = "Position", y = "Total # of Errors by Position")
+```
+
+Based on position for errors in baseball, it turns out that Shortstop makes the most errors in the game. It is not a surprise as they could miss catches, since they are at a closer to the 2nd Base and a distance from 3rd as well. Possibilities are also the miss throws when the receiver couldn't catch the ball, also dropped balls as well. 
+
+# Looking & Plotting Errors by Team
+
+```{r}
+btopper = ddply(fieldING, "teamID", summarise, errors_by_team = sum(E))
+
+
+ggplot(btopper, aes(teamID, errors_by_team)) + 
+  geom_bar(stat='identity', fill = 'violet') + 
+  labs(title = "Errors by Team Since 1920", x = "Team", y = "Total # of Errors")
+```
+
+
+# Conclusion:
+
+I have learned the importance of tackling datasets that involves with having multiple spreadsheets from the information that is given. Baseball is a sport that can have unpredictability when it comes to the closers, where they have made more of an impact of winning for the team.I have taken the opportunity to expand the visuals and to implement more statistical practices on using the dataset. Utilized cleaning on the datasets along the way, and not doing it all at one setting. By visualizing the data from the past, it turns out that it is possible to look at some statistics from the beginning. Most of it has more of an impact in the last 30 years when it comes to performance and salaries. Also, would want to have better identification on which model would be the best for further analyses.
+
+# Future Work:
+
+Would want to put it on a Shiny App if possible. Take more of different methods from what I have learned and to go beyond. Also would do differences with the interaction with the regression models that I have created as well. 
