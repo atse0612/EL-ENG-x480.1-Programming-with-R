@@ -1,0 +1,60 @@
+---
+title: "Programming with R: Final Exam"
+author: "Heather Savoy"
+date: "10/04/2017"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This PDF describes the problem statement for the second problem for our final exam. Write one .R script (or, optionally, a .Rmd) that addresses the problem described below. Upload your script to Question 2 of the **Final Exam (Timed)** assignment.  
+
+
+## Problem 2
+This problem addresses the question someone raised in class during the lecture on unsupervised learning: **How do you decide how many clusters to use?** One way to do this is to look at how much of the variance is explained by the model as a function of the number of clusters. This should sound familiar - it's similar to how you decide on how many principal components to use while doing PCA. Luckily, the `kmeans` function reports this variance in its clustering results. This variance value can be accessed with the `tot.withinss` result like so:
+
+```{r, eval = FALSE}
+clustered <- kmeans(yourDataFrame, k)
+clustered$tot.withinss
+```
+
+So if you were to try a variety of values of `k` (i.e., number of clusters), then you would have a `tot.withinss` value for each. If you plot them against each other, you will see a plot something like this:
+
+```{r, echo = FALSE}
+ss <- c()
+N <- 10
+for(i in 1:N){
+  ss[i] <- kmeans(mtcars[, c(1,4)], i)$tot.withinss
+}
+plot(1:N, ss, xlab="Number of Clusters", ylab="Total Sum of Square Error")
+```
+
+Ideally, we want to minimize both the `tot.withinss` value as well as the number of clusters. However, you can see from the plot above that `tot.withinss` generally decreases with increased number of clusters. So we go for what is referred to as the *elbow* in this plot. Visually, it's where there is a crook in the curve. In the plot above, it's at four clusters, i.e. k=4. Increasing to k=5 didn't really make much a difference to `tot.withinss` so it's not really worth it to do five clusters. However, we need to determine this elbow quantitatively so we can automatically choose the number of clusters based on this method. Your job is to write a script that does this and the following:
+
+* Uses the *mpg* and *hp* columns from the built-in **mtcars** dataset to attempt to cluster the cars.
+* Applies `kmeans` with 1-10 clusters.
+* Records the `tot.withinss` value for each of these ten clustering attempts.
+* Identifies the elbow quantitatively. This is a bit open-ended, but an example of picking out this point could work like this:
+     + First, make the `tot.withinss` values relative to the largest one, i.e. `ss/max(ss)`.
+     + Calculate the difference between these relative values with increasing number of clusters. Hint: consider the `diff` function. 
+     + Set a threshold of diminishing return, i.e. what change in the relative values is it no longer worth it to increase the number of clusters. You can set this to 5%. 
+     + Determine which changes in relative values are less than that threshold? Hint: you will want to use absolute values with the `abs` function.
+     + Determine the highest number of clusters where the threshold has not been passed. This is the number of clusters to use. 
+
+You know your code is correct when the number of clusters calculated agrees with the elbow you see in a plot of `tot.withinss` against `k`. 
+
+```{r, include = FALSE}
+df <- mtcars[,c(1,4)]
+names(df) <- c("x","y")
+ss <- c()
+N <- 10
+for(i in 1:N){
+  ss[i] <- kmeans(df, i)$tot.withinss
+}
+plot(1:N, ss)
+k <- which(abs(diff(ss/ss[1])) < 0.1)[1]
+k
+```
+
